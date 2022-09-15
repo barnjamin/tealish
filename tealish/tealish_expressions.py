@@ -37,13 +37,12 @@ class ExpressionCompiler:
 
     def __init__(self, source, scope={}) -> None:
         self.current_scope = None
-        self.output = []
         self.set_scope(scope)
         self.lang_spec = lang_spec
         self.ops = {op['Name']: op for op in self.lang_spec['Ops']}
         self.txn_fields = dict(zip(self.ops['txn']['ArgEnum'], map(type_lookup, self.ops['txn']['ArgEnumTypes'])))
         self.global_fields = dict(zip(self.ops['global']['ArgEnum'], map(type_lookup, self.ops['global']['ArgEnumTypes'])))
-        self.used_functions = set()
+        self.used_functions: set[str] = set()
         self.node = tealish_mm.model_from_str(source)
 
     def set_scope(self, scope):

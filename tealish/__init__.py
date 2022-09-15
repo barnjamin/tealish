@@ -10,8 +10,8 @@ from .utils import combine_source_maps, minify_teal
 line_no = 0
 level = 0
 current_output_line = 1
-output = []
-source_map = {}
+output: list[str] = []
+source_map: dict[int, str] = {}
 
 
 class ParseError(Exception):
@@ -24,16 +24,16 @@ class CompileError(Exception):
 
 class TealishCompiler:
 
-    def __init__(self, source_lines) -> None:
-        self.source_lines = source_lines
-        self.output = []
-        self.source_map = {}
-        self.current_output_line = 1
-        self.level = 0
-        self.line_no = 0
-        self.nodes = []
-        self.conditional_count = 0
-        self.error_messages = {}
+    def __init__(self, source_lines: list[str]) -> None:
+        self.source_lines: list[str] = source_lines
+        self.output: list[str] = []
+        self.source_map: dict[int,int] = {}
+        self.current_output_line: int = 1
+        self.level: int = 0
+        self.line_no: int = 0
+        self.nodes: list[Node] = []
+        self.conditional_count: int = 0
+        self.error_messages: dict[int, str] = {}
         self.max_slot = 0
 
     def consume_line(self):
@@ -86,9 +86,9 @@ class TealishCompiler:
 
 class Node:
     pattern = ''
-    possible_child_nodes = []
+    possible_child_nodes: list[type["Node"]] = []
 
-    def __init__(self, line, parent=None, compiler=None) -> None:
+    def __init__(self, line, parent: "Node"  =None, compiler: TealishCompiler =None) -> None:
         self.parent = parent
         self.current_scope = None
         if parent:
@@ -96,9 +96,12 @@ class Node:
         self.compiler = compiler
         self.line = line
         self.line_no = compiler.line_no if compiler else None
-        self.nodes = []
+        self.nodes: list[Node] = []
         try:
-            self.matches = re.match(self.pattern, self.line).groupdict()
+            matches = re.match(self.pattern, self.line)
+            if matches is None:
+                raise Exception()
+            self.matches = matches.groupdict()
         except AttributeError:
             raise ParseError(f'Pattern ({self.pattern}) does not match for {self} for line "{self.line}"')
         type_hints = get_type_hints(self.__class__)
@@ -122,7 +125,7 @@ class Node:
         self.nodes.append(node)
 
     @classmethod
-    def consume(cls, compiler, parent):
+    def consume(cls, compiler: TealishCompiler, parent: "Node"):
         line = compiler.consume_line()
         return cls(line, parent=parent, compiler=compiler)
 
@@ -139,7 +142,7 @@ class Node:
     def process(self):
         raise NotImplementedError()
 
-    def write(self, lines):
+    def write(self, lines: list[str]):
         self.compiler.write(lines, self.line_no)
 
     def new_scope(self, name='', slot_range=None):
@@ -554,7 +557,7 @@ class Switch(InlineStatement):
 
     def __init__(self, line, parent=None, compiler=None) -> None:
         super().__init__(line, parent, compiler)
-        self.options = []
+        self.options: list[SwitchOption] = []
         self.else_ = None
 
     def add_option(self, node):
@@ -815,7 +818,7 @@ class IfStatement(InlineStatement):
     def __init__(self, line, parent=None, compiler=None) -> None:
         super().__init__(line, parent, compiler)
         self.if_then = None
-        self.elifs = []
+        self.elifs: list[Elif] = []
         self.else_ = None
         self.conditional_index = compiler.conditional_count
         compiler.conditional_count += 1
@@ -896,7 +899,7 @@ class IfStatement(InlineStatement):
 class ArgsList(Expression):
     arg_pattern = r'(?P<arg_name>[a-z][a-z_0-9]*): (?P<arg_type>int|bytes)'
     pattern = rf'(?P<args>({arg_pattern}(, )?)*)'
-    args: str
+    args: list[str]
 
     def __init__(self, string) -> None:
         super().__init__(string)
@@ -905,10 +908,10 @@ class ArgsList(Expression):
 
 class Func(InlineStatement):
     possible_child_nodes = [InlineStatement]
-    pattern = r'func (?P<name>[a-zA-Z_0-9]+)\((?P<args>.*)\)(?P<returns>.*):$'
+    pattern = r'func (?P<name>[a-zA-Z_0-9]+)\((?P<args>.*)\)(?P<func_returns>.*):$'
     name: str
     args: ArgsList
-    returns: str
+    func_returns: str
 
     def __init__(self, line, parent=None, compiler=None) -> None:
         super().__init__(line, parent, compiler)
@@ -916,7 +919,7 @@ class Func(InlineStatement):
         scope['functions'][self.name] = self
         self.label = scope['name'] + '__func__' + self.name
         self.new_scope('func__' + self.name)
-        self.returns = list(filter(None, [s.strip() for s in self.returns.split(',')]))
+        self.returns: list[str] = list(filter(None, [s.strip() for s in self.func_returns.split(',')]))
 
     @classmethod
     def consume(cls, compiler, parent):

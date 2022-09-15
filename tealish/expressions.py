@@ -16,7 +16,11 @@ class Expression:
     def __init__(self, string) -> None:
         self.string = string
         try:
-            self.matches = re.match(self.pattern, self.string).groupdict()
+            matches = re.match(self.pattern, self.string)
+            if matches is None:
+                raise Exception()
+
+            self.matches = matches.groupdict()
             # print(self, self.matches)
         except Exception:
             raise Exception(f'String "{string}" cannot be parsed as {self.__class__.__name__}')
