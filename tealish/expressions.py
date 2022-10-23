@@ -50,8 +50,10 @@ class Expression:
 
 
 class GenericExpression(Expression):
+    #expression: ExpressionCompiler
+
     @classmethod
-    def parse(cls, string):
+    def parse(cls, string) -> "GenericExpression":
         try:
             expression = ExpressionCompiler(string)
         except Exception:
@@ -60,6 +62,8 @@ class GenericExpression(Expression):
             raise Exception(f'Cannot parse "{string}" as Expression')
         expr = cls(string)
         expr.expression = expression
+        print(expression.node.__dict__)
+        print(expression.node.__class__)
         return expr
 
     def process(self, scope):

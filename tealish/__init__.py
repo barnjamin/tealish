@@ -30,7 +30,7 @@ class TealishCompiler:
         self.current_output_line = 1
         self.level = 0
         self.line_no = 0
-        self.nodes = []
+        self.nodes: list[Node] = []
         self.conditional_count = 0
         self.error_messages = {}
         self.max_slot = 0
@@ -87,7 +87,7 @@ class Node:
     pattern = ""
     possible_child_nodes = []
 
-    def __init__(self, line, parent=None, compiler=None) -> None:
+    def __init__(self, line, parent: "Node"=None, compiler: TealishCompiler=None) -> None:
         self.parent = parent
         self.current_scope = None
         if parent:
@@ -95,7 +95,7 @@ class Node:
         self.compiler = compiler
         self.line = line
         self.line_no = compiler.line_no if compiler else None
-        self.nodes = []
+        self.nodes: list[Node] = []
         try:
             self.matches = re.match(self.pattern, self.line).groupdict()
         except AttributeError:
@@ -1193,6 +1193,21 @@ def split_return_args(s):
     return [s]
 
 
+def build_tree(source):
+    source_lines = source.split("\n")
+    compiler = TealishCompiler(source_lines)
+    try:
+        compiler.parse()
+    except ParseError as e:
+        print(e)
+        sys.exit(1)
+    except Exception:
+        print(f"Line: {compiler.line_no}")
+        raise
+
+    return compiler
+
+
 def compile_program(source, debug=False):
     source_lines = source.split("\n")
     compiler = TealishCompiler(source_lines)
@@ -1204,6 +1219,7 @@ def compile_program(source, debug=False):
     except Exception:
         print(f"Line: {compiler.line_no}")
         raise
+
     try:
         compiler.compile()
     except CompileError as e:
