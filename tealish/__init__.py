@@ -2,16 +2,25 @@ import re
 import sys
 import textwrap
 from collections import defaultdict
-from typing import get_type_hints
+from enum import Enum
+from typing import get_type_hints, Optional, Tuple, List, Dict, Any
 
 from .expressions import Expression, GenericExpression, Literal
 from .utils import combine_source_maps, minify_teal
 
-line_no = 0
-level = 0
-current_output_line = 1
-output: list[str] = []
-source_map: dict[int, str] = {}
+
+class StackType(str, Enum):
+    int = "int"
+    bytes = "bytes"
+    any = "any"
+    none = "none"
+
+
+line_no: int = 0
+level: int = 0
+current_output_line: int = 1
+output: List[str] = []
+source_map: Dict[int, str] = {}
 
 
 class ParseError(Exception):
@@ -23,18 +32,17 @@ class CompileError(Exception):
 
 
 class TealishCompiler:
-
-    def __init__(self, source_lines: list[str]) -> None:
-        self.source_lines: list[str] = source_lines
-        self.output: list[str] = []
-        self.source_map: dict[int,int] = {}
+    def __init__(self, source_lines: List[str]) -> None:
+        self.source_lines: List[str] = source_lines
+        self.output: List[str] = []
+        self.source_map: Dict[int, int] = {}
         self.current_output_line: int = 1
         self.level: int = 0
         self.line_no: int = 0
-        self.nodes: list[Node] = []
+        self.nodes: List[Node] = []
         self.conditional_count: int = 0
         self.error_messages: dict[int, str] = {}
-        self.max_slot = 0
+        self.max_slot: int = 0
 
     def consume_line(self):
         if self.line_no == len(self.source_lines):
@@ -48,7 +56,7 @@ class TealishCompiler:
             return
         return self.source_lines[self.line_no].strip()
 
-    def write(self, lines=("",), line_no=0):
+    def write(self, lines=("",), line_no: int = 0):
         prefix = "  " * self.level
         if type(lines) == str:
             lines = [lines]
@@ -84,28 +92,52 @@ class TealishCompiler:
         return self.nodes[0].reformat()
 
 
-class Node:
-    pattern = ''
-    possible_child_nodes: list[type["Node"]] = []
-
-    def __init__(self, line, parent: "Node"  =None, compiler: TealishCompiler =None) -> None:
+class Scope:
+    def __init__(
+        self,
+        name: str,
+        parent: Optional["Scope"] = None,
+        slot_range: Optional[Tuple[int, int]] = None,
+    ):
         self.parent = parent
-        self.current_scope = None
+        self.slots: Dict[int, StackType] = {}
+        self.slot_range = slot_range if slot_range is not None else [0, 200]
+        self.consts: Dict[str, StackType] = {}
+        self.blocks: Dict[str, Block] = {}
+        self.functions: Dict[str, Func] = {}
+        self.name = name
+        if parent is not None and parent.name:
+            self.name = f"{parent.name}__{name}"
+
+
+class Node:
+    pattern = ""
+    possible_child_nodes: List[type["Node"]] = []
+
+    def __init__(
+        self, line: int, parent: "Node" = None, compiler: TealishCompiler = None
+    ) -> None:
+        self.parent = parent
+        self.current_scope: Optional[Scope] = None
         if parent:
             self.current_scope = parent.current_scope
         self.compiler = compiler
         self.line = line
-        self.line_no = compiler.line_no if compiler else None
-        self.nodes: list[Node] = []
+        self.line_no = compiler.line_no if compiler else 0
+        self.nodes: List[Node] = []
+
         try:
-            matches = re.match(self.pattern, self.line)
+            matches: Optional[re.Match[str]] = re.match(self.pattern, self.line)
             if matches is None:
-                raise Exception()
+                raise ParseError(
+                    f'Pattern ({self.pattern}) does not match for {self} for line "{self.line}"'
+                )
             self.matches = matches.groupdict()
         except AttributeError:
             raise ParseError(
                 f'Pattern ({self.pattern}) does not match for {self} for line "{self.line}"'
             )
+
         type_hints = get_type_hints(self.__class__)
         for name, expr_class in type_hints.items():
             if name in self.matches:
@@ -119,10 +151,10 @@ class Node:
                     raise
                     raise ParseError(str(e) + f" at line {self.compiler.line_no}")
 
-    def add_child(self, node):
+    def add_child(self, node: "Node"):
         if not isinstance(node, tuple(self.possible_child_nodes)):
             raise ParseError(
-                f"Unexpected child node {node} in {self} at line {self.compiler.line_no}!"
+                f"Unexpected child node {node} in {self} at line {self.line_no}!"
             )
         node.parent = self
         if not node.current_scope:
@@ -130,7 +162,7 @@ class Node:
         self.nodes.append(node)
 
     @classmethod
-    def consume(cls, compiler: TealishCompiler, parent: "Node"):
+    def consume(cls, compiler: TealishCompiler, parent: "Node") -> "Node":
         line = compiler.consume_line()
         return cls(line, parent=parent, compiler=compiler)
 
@@ -147,25 +179,16 @@ class Node:
     def process(self):
         raise NotImplementedError()
 
-    def write(self, lines: list[str]):
+    def write(self, lines: List[str]):
+        if self.compiler is None:
+            raise Exception("No compiler?")
         self.compiler.write(lines, self.line_no)
 
-    def new_scope(self, name="", slot_range=None):
+    def new_scope(self, name: str = "", slot_range: Tuple[int, int] | None = None):
         parent_scope = self.parent.get_current_scope() if self.parent else None
-        self.current_scope = {
-            "parent": parent_scope,
-            "slots": {},
-            "slot_range": slot_range or [0, 200],
-            "aliases": {},
-            "consts": {},
-            "blocks": {},
-            "functions": {},
-            "name": (parent_scope["name"] + "__" + name)
-            if parent_scope and parent_scope["name"]
-            else name,
-        }
+        self.current_scope = Scope(name, parent_scope, slot_range)
 
-    def get_scope(self):
+    def get_scope(self) -> dict[str, Any]:
         scope = {
             "slots": {},
             "consts": {},
@@ -173,22 +196,22 @@ class Node:
             "functions": {},
         }
         for s in self.get_scopes():
-            scope["consts"].update(s["consts"])
-            scope["blocks"].update(s["blocks"])
-            scope["slots"].update(s["slots"])
-            scope["functions"].update(s["functions"])
+            scope["consts"].update(s.consts)
+            scope["blocks"].update(s.blocks)
+            scope["slots"].update(s.slots)
+            scope["functions"].update(s.functions)
         return scope
 
     def get_current_scope(self):
         return self.current_scope
 
     def get_scopes(self):
-        scopes = []
+        scopes: List[Scope] = []
         s = self.get_current_scope()
         while True:
             scopes.append(s)
-            if s["parent"]:
-                s = s["parent"]
+            if s.parent is not None:
+                s = s.parent
             else:
                 break
         return scopes
@@ -196,13 +219,13 @@ class Node:
     def get_const(self, name):
         consts = {}
         for s in self.get_scopes():
-            consts.update(s["consts"])
+            consts.update(s.consts)
         return consts[name]
 
     def get_slots(self):
         slots = {}
         for s in self.get_scopes():
-            slots.update(s["slots"])
+            slots.update(s.slots)
         return slots
 
     def get_var(self, name):
@@ -217,24 +240,24 @@ class Node:
         if slot is not None:
             raise Exception(f'Redefinition of variable "{name}"')
         scope = self.get_current_scope()
-        if "func__" in scope["name"]:
+        if "func__" in scope.name:
             # If this var is declared in a function then use the global max slot + 1
             # This is to prevent functions using overlapping slots
             slot = self.compiler.max_slot + 1
         else:
             slot = self.find_slot()
         self.compiler.max_slot = max(self.compiler.max_slot, slot)
-        scope["slots"][name] = [slot, type]
+        scope.slots[name] = [slot, type]
         return slot
 
     def del_var(self, name):
         scope = self.get_current_scope()
-        if name in scope["slots"]:
-            del scope["slots"][name]
+        if name in scope.slots:
+            del scope.slots[name]
 
     def find_slot(self):
         scope = self.get_current_scope()
-        min, max = scope["slot_range"]
+        min, max = scope.slot_range
         used_slots = [False] * 255
         slots = self.get_slots()
         for k in slots:
@@ -246,16 +269,14 @@ class Node:
                     return i
         raise Exception("No available slots!")
 
-    def get_blocks(self):
+    def get_blocks(self) -> Dict[str, "Block"]:
         blocks = {}
         for s in self.get_scopes():
-            blocks.update(s["blocks"])
+            blocks.update(s.blocks)
         return blocks
 
     def get_block(self, name):
         block = self.get_blocks().get(name)
-        # if block:
-        #     self.used_blocks.add(block.label)
         return block
 
     def is_descendant_of(self, node_class):
@@ -286,7 +307,7 @@ class Node:
 
 class Statement(Node):
     @classmethod
-    def consume(cls, compiler, parent):
+    def consume(cls, compiler: TealishCompiler, parent: Node):
         line = compiler.peek()
         if line.startswith("block "):
             return Block.consume(compiler, parent)
@@ -313,7 +334,9 @@ class Statement(Node):
 class Program(Node):
     possible_child_nodes = [Statement]
 
-    def __init__(self, line, parent=None, compiler=None) -> None:
+    def __init__(
+        self, line, parent: Node = None, compiler: TealishCompiler = None
+    ) -> None:
         super().__init__(line, parent, compiler)
         self.new_scope("")
 
@@ -321,7 +344,7 @@ class Program(Node):
         return self.current_scope
 
     @classmethod
-    def consume(cls, compiler, parent):
+    def consume(cls, compiler: TealishCompiler, parent: Node):
         node = Program("", parent=parent, compiler=compiler)
         while True:
             if compiler.peek() is None:
@@ -346,7 +369,7 @@ class InlineStatement(Statement):
 
 class LineStatement(InlineStatement):
     @classmethod
-    def consume(cls, compiler, parent):
+    def consume(cls, compiler: TealishCompiler, parent: Node):
         line = compiler.consume_line()
         if line.startswith("#pragma"):
             if compiler.line_no != 1:
@@ -411,13 +434,13 @@ class Blank(LineStatement):
 
 class Const(LineStatement):
     pattern = r"const (?P<type>\bint\b|\bbytes\b) (?P<name>[A-Z][a-zA-Z0-9_]*) = (?P<expression>.*)$"
-    type: str
+    type: StackType
     name: str
     expression: Literal
 
     def process(self):
         scope = self.get_current_scope()
-        scope["consts"][self.name] = [self.type, self.expression.value]
+        scope.consts[self.name] = (self.type, self.expression.value)
 
 
 class Jump(LineStatement):
@@ -461,8 +484,8 @@ class Assert(LineStatement):
     def process(self):
         self.arg.process(self.get_scope())
         assert self.arg.type in (
-            "int",
-            "any",
+            StackType.int,
+            StackType.any,
         ), f"Incorrect type for assert. Expected int, got {self.arg.type}"
         self.write(f"// {self.line}")
         self.write(self.arg.teal())
@@ -479,13 +502,13 @@ class BytesDeclaration(LineStatement):
     expression: GenericExpression
 
     def process(self):
-        slot = self.declare_var(self.name, "bytes")
+        slot = self.declare_var(self.name, StackType.bytes)
         self.write(f"// {self.line} [slot {slot}]")
         if self.expression:
             self.expression.process(self.get_scope())
             assert self.expression.type in (
-                "bytes",
-                "any",
+                StackType.bytes,
+                StackType.any,
             ), f"Incorrect type for bytes assignment. Expected bytes, got {self.expression.type}"
             self.write(self.expression.teal())
             self.write(f"store {slot} // {self.name}")
@@ -497,13 +520,13 @@ class IntDeclaration(LineStatement):
     expression: GenericExpression
 
     def process(self):
-        slot = self.declare_var(self.name, "int")
+        slot = self.declare_var(self.name, StackType.int)
         self.write(f"// {self.line} [slot {slot}]")
         if self.expression:
             self.expression.process(self.get_scope())
             assert self.expression.type in (
-                "int",
-                "any",
+                StackType.int,
+                StackType.any,
             ), f"Incorrect type for int assignment. Expected int, got {self.expression.type}"
             self.write(self.expression.teal())
             self.write(f"store {slot} // {self.name}")
@@ -546,12 +569,12 @@ class Block(Statement):
     def __init__(self, line, parent=None, compiler=None) -> None:
         super().__init__(line, parent, compiler)
         scope = self.get_current_scope()
-        scope["blocks"][self.name] = self
-        self.label = scope["name"] + ("__" if scope["name"] else "") + self.name
+        scope.blocks[self.name] = self
+        self.label = scope.name + ("__" if scope.name else "") + self.name
         self.new_scope(self.name)
 
     @classmethod
-    def consume(cls, compiler, parent):
+    def consume(cls, compiler, parent) -> "Block":
         line = compiler.consume_line()
         block = Block(line, parent, compiler=compiler)
         while True:
@@ -598,7 +621,7 @@ class Switch(InlineStatement):
 
     def __init__(self, line, parent=None, compiler=None) -> None:
         super().__init__(line, parent, compiler)
-        self.options: list[SwitchOption] = []
+        self.options: List[SwitchOption] = []
         self.else_ = None
 
     def add_option(self, node):
@@ -872,7 +895,7 @@ class IfStatement(InlineStatement):
     def __init__(self, line, parent=None, compiler=None) -> None:
         super().__init__(line, parent, compiler)
         self.if_then = None
-        self.elifs: list[Elif] = []
+        self.elifs: List[Elif] = []
         self.else_ = None
         self.conditional_index = compiler.conditional_count
         compiler.conditional_count += 1
@@ -1031,7 +1054,7 @@ class ForStatement(InlineStatement):
         self.end_label = f"l{self.conditional_index}_end"
 
     @classmethod
-    def consume(cls, compiler, parent):
+    def consume(cls, compiler: TealishCompiler, parent: Node):
         node = ForStatement(compiler.consume_line(), parent, compiler=compiler)
         while True:
             if compiler.peek() == "end":
@@ -1052,7 +1075,7 @@ class ForStatement(InlineStatement):
         self.start.process(self.get_scope())
         self.end.process(self.get_scope())
         self.write(self.start.teal())
-        slot = self.declare_var(self.var, "int")
+        slot = self.declare_var(self.var, StackType.int)
         self.write(f"store {slot} // {self.var}")
         self.write(f"{self.start_label}:")
         self.write(f"load {slot} // {self.var}")
@@ -1105,7 +1128,7 @@ class ForStatement(InlineStatement):
 class ArgsList(Expression):
     arg_pattern = r"(?P<arg_name>[a-z][a-z_0-9]*): (?P<arg_type>int|bytes)"
     pattern = rf"(?P<args>({arg_pattern}(, )?)*)"
-    args: str
+    args: List[str]
 
     def __init__(self, string) -> None:
         super().__init__(string)
@@ -1122,10 +1145,13 @@ class Func(InlineStatement):
     def __init__(self, line, parent=None, compiler=None) -> None:
         super().__init__(line, parent, compiler)
         scope = self.get_current_scope()
-        scope["functions"][self.name] = self
-        self.label = scope["name"] + "__func__" + self.name
+        scope.functions[self.name] = self
+        self.label = scope.name + "__func__" + self.name
         self.new_scope("func__" + self.name)
-        self.returns = list(filter(None, [s.strip() for s in self.returns.split(",")]))
+
+        self.func_returns = list(
+            filter(None, [s.strip() for s in self.line.split(",")])
+        )
 
     @classmethod
     def consume(cls, compiler, parent):
