@@ -188,8 +188,8 @@ class Node:
         parent_scope = self.parent.get_current_scope() if self.parent else None
         self.current_scope = Scope(name, parent_scope, slot_range)
 
-    def get_scope(self) -> dict[str, Any]:
-        scope = {
+    def get_scope(self) -> Dict[str, Any]:
+        scope: Dict[str, Dict[Any, Any]] = {
             "slots": {},
             "consts": {},
             "blocks": {},
@@ -222,13 +222,13 @@ class Node:
             consts.update(s.consts)
         return consts[name]
 
-    def get_slots(self):
+    def get_slots(self)->Tuple[int, StackType]:
         slots = {}
         for s in self.get_scopes():
             slots.update(s.slots)
         return slots
 
-    def get_var(self, name):
+    def get_var(self, name)->Tuple[str, StackType]:
         slots = self.get_slots()
         if name in slots:
             return slots[name]
@@ -556,7 +556,7 @@ class Assignment(LineStatement):
                 if slot is None:
                     raise Exception(f'Var "{name}" not declared in current scope')
                 assert (
-                    types[i] == "any" or types[i] == t
+                    types[i] in (StackType.any, t)
                 ), f"Incorrect type for {t} assignment. Expected {t}, got {types[i]}"
                 self.write(f"store {slot} // {name}")
 
@@ -1150,7 +1150,7 @@ class Func(InlineStatement):
         self.new_scope("func__" + self.name)
 
         self.func_returns = list(
-            filter(None, [s.strip() for s in self.line.split(",")])
+            filter(None, [s.strip() for s in line.split(",")])
         )
 
     @classmethod
