@@ -52,16 +52,17 @@ Static Arrays
 Dynamic Arrays
 ---------------
 
-# Generic type over a dynamic array?
-struct avm_dynamic_array<T>:
+# For dynamic arrays of dynamic contents
+struct avm_dynamic_array<string>:
     # uint16 offsets 
     positions: byte[2][]
-    # the rest of the array
+
+    # the contents of the array
     elems: bytes
 end
 
 # Dynamic Array of ["A", "B", "C"] 
-avm_dynamic_array<bytes[]> my_dyn_arr = abi_decode("[]string", 0x00030006000900c000165000166000167)
+avm_dynamic_array my_dyn_arr = abi_decode("[]string", 0x00030006000900c000165000166000167)
 
 # len is size of `positions` array / 2 (for uint16 repr)
 assert len(my_dyn_arr) == 3 
@@ -80,6 +81,18 @@ assert my_dyn_arr[3] == "D"
 
 bytes abi_encoded_dyn_arr = abi_encode("[]string", my_dyn_arr)
 assert abi_encoded_dyn_arr == 0x00040009000c000f0012000165000166000167000168
+
+
+# For dynamic arrays of static contents
+struct avm_dynamic_array<uint64>:
+    # we can rely on stride rather than tracking offsets
+    stride: 8
+    # the contents of the array
+    elems: bytes
+end
+
+
+
 
 """
 
