@@ -1,5 +1,8 @@
 from enum import Enum
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Union, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .nodes import Struct
 
 
 class AVMType(str, Enum):
@@ -7,21 +10,31 @@ class AVMType(str, Enum):
 
     any = "any"
     bytes = "bytes"
-    # TODO: now frame pointers support a signed int, we should account for it
     int = "int"
     none = ""
 
 
-constants: Dict[str, Tuple[str, int]] = {
-    "NoOp": ("int", 0),
-    "OptIn": ("int", 1),
-    "CloseOut": ("int", 2),
-    "ClearState": ("int", 3),
-    "UpdateApplication": ("int", 4),
-    "DeleteApplication": ("int", 5),
-    "Pay": ("int", 1),
-    "Acfg": ("int", 3),
-    "Axfer": ("int", 4),
-    "Afrz": ("int", 5),
-    "Appl": ("int", 6),
+structs: Dict[str, "Struct"] = {}
+
+
+def define_struct(struct_name: str, struct: "Struct") -> None:
+    structs[struct_name] = struct
+
+
+def get_struct(struct_name: str) -> "Struct":
+    return structs[struct_name]
+
+
+constants: Dict[str, Tuple[AVMType, Union[str, bytes, int]]] = {
+    "NoOp": (AVMType.int, 0),
+    "OptIn": (AVMType.int, 1),
+    "CloseOut": (AVMType.int, 2),
+    "ClearState": (AVMType.int, 3),
+    "UpdateApplication": (AVMType.int, 4),
+    "DeleteApplication": (AVMType.int, 5),
+    "Pay": (AVMType.int, 1),
+    "Acfg": (AVMType.int, 3),
+    "Axfer": (AVMType.int, 4),
+    "Afrz": (AVMType.int, 5),
+    "Appl": (AVMType.int, 6),
 }
