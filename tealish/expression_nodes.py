@@ -499,6 +499,18 @@ class StructOrBoxField(BaseNode):
     def _tealish(self) -> str:
         return f"{self.name}.{self.field}"
 
+class Comment(BaseNode):
+    def __init__(self, msg: str, parent: Optional[BaseNode] = None) -> None:
+        print("hi")
+        self.comment = msg 
+        self.type = AVMType.none
+        self.parent = parent
+
+    def write_teal(self, writer: "TealWriter") -> None:
+        writer.write(self, f"# {self.comment}")
+
+    def _tealish(self) -> str:
+        return f"# {self.comment}"
 
 def class_provider(name: str) -> Optional[type]:
     classes = {
@@ -519,5 +531,6 @@ def class_provider(name: str) -> Optional[type]:
         "GlobalField": GlobalField,
         "InnerTxnField": InnerTxnField,
         "StructOrBoxField": StructOrBoxField,
+        "Comment": Comment,
     }
     return classes.get(name)

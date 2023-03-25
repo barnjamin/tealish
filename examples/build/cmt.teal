@@ -1,0 +1,32 @@
+#pragma version 7
+
+// Setup vars
+// int x = 2 [slot 0]
+pushint 2
+store 0 // x
+// int y = 3 [slot 1]
+pushint 3
+store 1 // y
+
+// Add vars
+// int z = x + y [slot 2]
+load 0 // x
+load 1 // y
++
+store 2 // z
+
+
+// assert(z>0, "z is not greater than 0")
+load 2 // z
+pushint 0
+>
+assert // z is not greater than 0
+
+// log(itob(z))
+load 2 // z
+itob
+log
+
+// exit(1)
+pushint 1
+return

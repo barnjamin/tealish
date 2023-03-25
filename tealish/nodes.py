@@ -199,6 +199,7 @@ class GenericExpression(Expression):
     @classmethod
     def parse(cls, line: str, parent: Node, compiler: "TealishCompiler") -> Node:
         try:
+            print(line)
             node = parse_expression(line)
         except Exception:
             raise ParseError(f'Cannot parse "{line}" as Expression')
@@ -255,6 +256,7 @@ class Program(Node):
     @classmethod
     def consume(cls, compiler: "TealishCompiler", parent: Optional[Node]) -> "Program":
         node = Program("", parent=parent, compiler=compiler)
+        print(node)
         expect_struct_definition = True
         while True:
             if compiler.peek() is None:
@@ -264,7 +266,7 @@ class Program(Node):
                 raise ParseError(
                     f"Unexpected Struct definition at line {n.line_no}."
                     + "Struct definitions should be at the top of the file and "
-                    + "only be preceeded by comments."
+                    + "only be preceded by comments."
                 )
             if not isinstance(n, (TealVersion, Blank, Comment, Struct)):
                 expect_struct_definition = False

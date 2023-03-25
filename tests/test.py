@@ -21,7 +21,7 @@ from tealish.tealish_builtins import AVMType
 
 def compile_lines(source_lines: List[str]) -> List[str]:
     compiler = TealishCompiler(source_lines)
-    compiler.parse()
+    print(compiler.__dict__)
     compiler.compile()
     teal_lines = compiler.output
     return teal_lines

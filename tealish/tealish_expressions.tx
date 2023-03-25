@@ -1,4 +1,3 @@
-
 Expression:   BinaryOp | UnaryOp | Group | FunctionCall | Field | Value;
 Group: ('(' expression=BinaryOp ')');
 UnaryOp: op=UnaryOperator a=Value;
@@ -36,3 +35,6 @@ NegativeGroupIndex: '-' index=INT;
 PositiveGroupIndex: '+' index=INT;
 Integer: value=/[0-9_]+/;
 Bytes: value=STRING;
+Comment: ErrorMessage | Note;
+Note: '# ' msg=STRING;
+ErrorMessage: '# error: ' msg=STRING;
